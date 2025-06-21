@@ -2,7 +2,7 @@
 
 This repository contains the data and analysis scripts associated with the manuscript:
 
-**Gonçalves da Silva, M.**, et al. (in review). *Responses of aquatic communities to seasonal changes in a non-perennial river of the Brazilian semiarid region*. Submitted to *Aquatic Sciences*.
+**Gonçalves-Silva, M.**, et al. (in review). *Responses of aquatic communities to seasonal changes in a non-perennial river of the Brazilian semiarid region*. Submitted to *Aquatic Sciences*.
 
 ---
 
