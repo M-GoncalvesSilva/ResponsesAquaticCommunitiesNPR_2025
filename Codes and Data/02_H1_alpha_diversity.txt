@@ -1,0 +1,172 @@
+################################################################################
+# Responses of aquatic communities to seasonal changes in a non-perennial river 
+# of the Brazilian semiarid region
+# 
+# H1: We expect α-diversity of fish and aquatic insects to decrease during the 
+# non-flowing phase due to environmental filtering, especially for rheophilic 
+# species.
+################################################################################
+
+### Load packages ----
+packages <- c("lme4", "lmerTest", "vegan", "BAT", "ade4", "ggplot2", 
+              "iNEXT", "patchwork", "dplyr", "car", "glmmTMB", 
+              "DHARMa", "MASS", "performance", "sf", "spdep", "writexl")
+lapply(packages, require, character.only = TRUE)
+
+### FISH DATA ANALYSIS ----
+
+# Load data
+fish <- read.csv("fish.csv", sep = ";", header = TRUE)
+
+# Aggregate data by sampling unit
+col_species <- 5:ncol(fish)
+fish_agg <- fish %>%
+  group_by(Month, Phase, Site, Section) %>%
+  summarise(across(all_of(names(fish)[col_species]), mean, na.rm = TRUE), .groups = "drop")
+
+# Save aggregated data
+write_xlsx(fish_agg, "fish_agg.xlsx")
+
+# Calculate species richness (presence/absence)
+cols <- names(fish_agg)
+start_col <- which(cols == "Poecilia_vivipara")
+fish_rich <- fish_agg %>%
+  mutate(richness = rowSums(across(all_of(cols[start_col:length(cols)]), ~ . > 0)))
+
+### Fit GLMM (Negative Binomial) ----
+plot(density(fish_rich$richness)) #data distribution
+hist(fish_rich$richness)
+shapiro.test(fish_rich$richness)
+ncvTest(lm(richness ~ Phase, data = fish_rich))
+
+model_fish_glmm <- glmmTMB(richness ~ Phase + (1|Site),
+                           data = fish_rich, family = nbinom2)
+summary(model_fish_glmm)
+
+sim_fish_glmm <- simulateResiduals(model_fish_glmm) # Check residuals
+plot(sim_fish_glmm)
+testUniformity(sim_fish_glmm)
+testDispersion(sim_fish_glmm)
+
+
+### INSECT DATA ANALYSIS ----
+
+insect <- read.csv("insect.csv", sep = ";", header = TRUE)
+insect[, 5:ncol(insect)] <- lapply(insect[, 5:ncol(insect)], as.numeric)
+
+# Aggregate by sampling unit
+col_families <- names(insect)[5:ncol(insect)]
+insect_agg <- insect %>%
+  group_by(Month, Phase, Site, Habitat) %>%
+  summarise(across(all_of(col_families), mean, na.rm = TRUE), .groups = "drop")
+write_xlsx(insect_agg, "insect_agg.xlsx")
+
+# Calculate family richness
+insect_rich <- insect_agg %>%
+  rowwise() %>%
+  mutate(richness = sum(c_across(all_of(col_families)) > 0, na.rm = TRUE)) %>%
+  ungroup()
+
+### Fit GLMM ----
+plot(density(insect_rich$richness)) #data distribution
+hist(insect_rich$richness)
+shapiro.test(insect_rich$richness)
+ncvTest(lm(richness ~ Phase, data = insect_rich))
+
+model_insect_glmm <- glmmTMB(richness ~ Phase + (1|Site), 
+                             data = insect_rich, family = nbinom2)
+summary(model_insect_glmm)
+
+sim_insect_glmm <- simulateResiduals(model_insect_glmm) # Check residuals
+plot(sim_insect_glmm)
+testUniformity(sim_insect_glmm)
+testDispersion(sim_insect_glmm)
+
+
+### SPATIAL AUTOCORRELATION TEST ----
+
+# 1. Coordinates in decimal degrees
+coords <- data.frame(
+  Site = c("S1", "S2", "S3", "S4", "S5", "S6"),
+  lon = c(-39.740475, -39.740833, -39.733083, -39.702833, -39.647861, -39.670833),
+  lat = c(-3.406186, -3.387167, -3.347806, -3.322500, -3.280583, -3.300278)
+)
+
+# 2. Convert to spatial object (WGS84 to UTM zone 24S)
+coords_sf <- st_as_sf(coords, coords = c("lon", "lat"), crs = 4326)
+coords_utm <- st_transform(coords_sf, crs = 32724)
+
+# 3. Create UTM coordinate matrix
+coords_mat <- as.matrix(st_coordinates(coords_utm))
+rownames(coords_mat) <- coords$Site
+
+# 4. Merge UTM coordinates into richness data
+coords_df <- data.frame(
+  Site = rownames(coords_mat), 
+  utm_x = coords_mat[, "X"], 
+  utm_y = coords_mat[, "Y"]
+)
+insect_rich <- merge(insect_rich, coords_df, by = "Site", all.x = TRUE)
+fish_rich   <- merge(fish_rich,   coords_df, by = "Site", all.x = TRUE)
+
+# 5. Build spatial weights (2-nearest neighbors)
+knn_nb <- knn2nb(knearneigh(coords_mat, k = 2))
+listw  <- nb2listw(knn_nb, style = "W")
+
+# 6. Extract residuals from original models
+resid_insect <- residuals(model_insect_glmm, type = "pearson")
+resid_fish   <- residuals(model_fish_glmm,   type = "pearson")
+
+insect_rich$resid <- resid_insect
+fish_rich$resid   <- resid_fish
+
+# 7. Compute mean residuals per site
+mean_resid_insect <- tapply(resid_insect, insect_rich$Site, mean)
+mean_resid_fish   <- tapply(resid_fish,   fish_rich$Site,   mean)
+
+# 8. Moran's I test for spatial autocorrelation
+moran_test_insect <- moran.test(mean_resid_insect, listw = listw)
+print(moran_test_insect)  # p = 0.04*
+
+moran_test_fish <- moran.test(mean_resid_fish, listw = listw)
+print(moran_test_fish)    # p = 0.09 (not significant)
+
+### ADD SPATIAL AUTOCOVARIATE IF NEEDED ----
+
+# Only for aquatic insects (significant spatial autocorrelation)
+
+# 1. Ensure region names are assigned to the spatial weights
+site_names <- coords$Site
+names(listw$neighbours) <- site_names
+
+# 2. Compute spatial autocovariate from mean residuals
+auto_cov_vec <- lag.listw(listw, mean_resid_insect[site_names])
+
+# 3. Create dataframe with spatial autocovariate per site
+auto_df <- data.frame(Site = site_names, auto_cov = auto_cov_vec)
+
+# 4. Join autocovariate to insect richness data
+insect_rich <- left_join(insect_rich, auto_df, by = "Site")
+
+# 5. Fit updated model with spatial autocovariate
+model_insect_auto <- glmmTMB(richness ~ Phase + auto_cov,
+                             data = insect_rich, family = nbinom2)
+
+# 6. Model output
+summary(model_insect_auto)
+
+AIC(model_insect_glmm, model_insect_auto)
+
+
+### Observed boxplots ----
+ggplot(fish_rich, aes(x = Phase, y = richness)) +
+  geom_boxplot(fill = "grey30") +
+  ylim(0, 30) +
+  labs(title = "Observed richness: Fish") +
+  theme_minimal()
+
+ggplot(insect_rich, aes(x = Phase, y = richness)) +
+  geom_boxplot(fill = "grey70") +
+  ylim(0, 30) +
+  labs(title = "Observed richness: Insects") +
+  theme_minimal()

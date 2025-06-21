@@ -1,0 +1,218 @@
+################################################################################
+# Responses of aquatic communities to seasonal changes in a non-perennial river 
+# of the Brazilian semiarid region
+# 
+# H2: During the non-flowing phase, we expect higher spatial β-diversity than 
+# during the flowing phase due to environmental heterogeneity across isolated 
+# pools and founder effects caused by river fragmentation during drying.
+################################################################################
+
+
+### Load packages ----
+packages <- c("BAT", "vegan", "ggplot2", "dplyr", "tidyr")
+lapply(packages, require, character.only = TRUE)
+
+### FISH DATA ANALYSIS ----
+
+# Load and aggregate data
+fish <- read.csv("fish.csv", sep = ";", header = TRUE)
+col_species <- 5:ncol(fish)
+fish_agg <- fish %>%
+  group_by(Month, Phase, Site, Section) %>%
+  summarise(across(all_of(names(fish)[col_species]), mean, na.rm = TRUE), .groups = "drop")
+
+# Extract density matrix and phase vector
+densi_fish <- fish_agg [5:23]
+phase <- fish_agg$Phase
+phases <- unique(phase)
+
+# Beta-diversity partitioning per phase
+densi_list <- split(densi_fish, phase)
+beta_results <- lapply(densi_list, function(mat) beta(mat, func = "bray"))
+
+# Summary of Brich and Brepl
+beta_phase <- list()
+for (ph in phases) {
+  densi_subset <- densi_fish[phase == ph, ]
+  beta_result <- beta(densi_subset, func = "bray")
+  beta_phase[[ph]] <- beta_result
+}
+
+df_beta_fish <- data.frame(
+  Phase = phases,
+  Btotal = sapply(beta_phase, function(x) mean(as.vector(x$Btotal))),
+  Brich = sapply(beta_phase, function(x) mean(as.vector(x$Brich))),
+  Brepl = sapply(beta_phase, function(x) mean(as.vector(x$Brepl)))
+)
+
+# Convert to long format for plotting
+df_long_fish <- pivot_longer(df_beta_fish, cols = c("Brich", "Brepl"),
+                             names_to = "Component", values_to = "Value")
+
+# Plot
+ggplot(df_long_fish, aes(x = Phase, y = Value, fill = Component)) +
+  geom_bar(stat = "identity", position = "stack") +
+  ylab("β-diversity components") +
+  xlab("Hydrological phase") +
+  scale_fill_manual(values = c("Brich" = "#33a02c", "Brepl" = "#1f78b4")) +
+  scale_y_continuous(limits = c(0, 1), expand = c(0, 0)) +
+  theme_minimal()
+
+
+# PERMANOVA and PERMDISP (using βtotal Bray-Curtis dissimilarity)
+beta_fish <- beta(densi_fish, func = "bray")
+dist_fish <- beta_fish$Btotal
+
+adonis2(dist_fish ~ phase, permutations = 9999)
+
+dispersion_fish <- betadisper(dist_fish, group = phase)
+permutest(dispersion_fish, permutations = 9999)
+
+# Boxplot of distance to centroid
+dist_to_centroid <- data.frame(
+  distance = dispersion_fish$distances,
+  phase = phase
+)
+
+ggplot(dist_to_centroid, aes(x = phase, y = distance, fill = phase)) +
+  geom_boxplot(alpha = 0.7) +
+  labs(y = "Distance to centroid", x = "Hydrological phase") +
+  scale_fill_manual(values = c("flowing" = "blue", "non_flowing" = "orange")) +
+  theme_minimal()
+
+# PCOA plot
+scores_df <- as.data.frame(scores(dispersion_fish, display = "sites"))
+scores_df$phase <- dispersion_fish$group
+
+centroids <- as.data.frame(scores(dispersion_fish, display = "centroids"))
+centroids$phase <- rownames(centroids)
+
+# Convex hulls
+hulls <- scores_df %>%
+  group_by(phase) %>%
+  slice(chull(PCoA1, PCoA2))
+
+# Gráfico
+ggplot(scores_df, aes(x = PCoA1, y = PCoA2, color = phase)) +
+  geom_polygon(data = hulls, aes(fill = phase), alpha = 0.2, color = NA) +
+  geom_point(size = 2) +
+  geom_segment(data = scores_df,
+               aes(xend = centroids[phase, "PCoA1"],
+                   yend = centroids[phase, "PCoA2"]),
+               color = "gray50", linetype = "solid") +
+  geom_point(data = centroids, aes(x = PCoA1, y = PCoA2, color = phase), size = 5) +
+  scale_color_manual(values = c("flowing" = "blue", "non_flowing" = "orange")) +
+  scale_fill_manual(values = c("flowing" = "blue", "non_flowing" = "orange")) +
+  scale_x_continuous(
+    name = "Eixo 1 (PCoA1)",
+    limits = c(-0.5, 0.5),        
+    breaks = seq(-0.5, 0.5, 0.25)    
+  ) +
+  scale_y_continuous(
+    name = "Eixo 2 (PCoA2)",
+    limits = c(-0.5, 0.5),
+    breaks = seq(-0.5, 0.5, 0.25)
+  ) +
+  theme_minimal()
+
+
+### INSECT DATA ANALYSIS ----
+
+# Load and aggregate data
+insect <- read.csv("insect.csv", sep = ";", header = TRUE)
+insect[, 5:ncol(insect)] <- lapply(insect[, 5:ncol(insect)], as.numeric)
+col_families <- names(insect)[5:ncol(insect)]
+insect_agg <- insect %>%
+  group_by(Month, Phase, Site, Habitat) %>%
+  summarise(across(all_of(col_families), mean, na.rm = TRUE), .groups = "drop")
+
+densi_insect <- insect_agg [5:54]
+phase_insect <- insect_agg$Phase
+phases_insect <- unique (phase_insect)
+
+# Beta-diversity partitioning per phase
+densi_list_insect <- split(densi_insect, phase_insect)
+beta_results <- lapply(densi_list_insect, function(mat) beta(mat, func = "bray"))
+
+# Summary of Brich and Brepl
+beta_phase_insect <- list()
+for (ph in phases_insect) {
+  densi_subset <- densi_insect[phase_insect == ph, ]
+  beta_result <- beta(densi_subset, func = "bray")
+  beta_phase_insect[[ph]] <- beta_result
+}
+
+df_beta_insect <- data.frame(
+  Phase = phases_insect,
+  Btotal = sapply(beta_phase_insect, function(x) mean(as.vector(x$Btotal))),
+  Brich = sapply(beta_phase_insect, function(x) mean(as.vector(x$Brich))),
+  Brepl = sapply(beta_phase_insect, function(x) mean(as.vector(x$Brepl)))
+)
+
+# Convert to long format for plotting
+df_long_fish <- pivot_longer(df_beta_insect, cols = c("Brich", "Brepl"),
+                             names_to = "Component", values_to = "Value")
+
+# Plot
+ggplot(df_long_fish, aes(x = Phase, y = Value, fill = Component)) +
+  geom_bar(stat = "identity", position = "stack") +
+  ylab("β-diversity components") +
+  xlab("Hydrological phase") +
+  scale_fill_manual(values = c("Brich" = "#33a02c", "Brepl" = "#1f78b4")) +
+  scale_y_continuous(limits = c(0, 1), expand = c(0, 0)) +
+  theme_minimal()
+
+# PERMANOVA and PERMDISP
+beta_insect <- beta(densi_insect, func = "bray")
+bray_dist_insect <- beta_insect$Btotal
+
+adonis2(bray_dist_insect ~ phase_insect, permutations = 9999)
+
+dispersion_insect <- betadisper(bray_dist_insect, group = phase_insect)
+permutest(dispersion_insect, permutations = 9999)
+
+# Distance to centroid (boxplot)
+dist_to_centroid_insect <- data.frame(
+  distance = dispersion_insect$distances,
+  phase = phase_insect
+)
+
+ggplot(dist_to_centroid_insect, aes(x = phase, y = distance, fill = phase)) +
+  geom_boxplot(alpha = 0.7) +
+  labs(y = "Distance to centroid", x = "Hydrological phase") +
+  scale_fill_manual(values = c("flowing" = "blue", "non_flowing" = "orange")) +
+  theme_minimal()
+
+# PCoA plot
+scores_df_insect <- as.data.frame(scores(dispersion_insect, display = "sites"))
+scores_df_insect$phase <- phase_insect
+
+centroids_insect <- as.data.frame(scores(dispersion_insect, display = "centroids"))
+centroids_insect$phase <- rownames(centroids_insect)
+
+# Convex hulls
+hulls <- scores_df_insect %>%
+  group_by(phase) %>%
+  slice(chull(PCoA1, PCoA2))
+
+ggplot(scores_df_insect, aes(x = PCoA1, y = PCoA2, color = phase)) +
+  geom_polygon(data = hulls, aes(fill = phase), alpha = 0.2, color = NA) +
+  geom_segment(data = scores_df_insect,
+               aes(xend = centroids_insect[phase, "PCoA1"],
+                   yend = centroids_insect[phase, "PCoA2"]),
+               color = "gray50", linetype = "solid") +
+  geom_point(size = 2) +
+  geom_point(data = centroids_insect, aes(x = PCoA1, y = PCoA2, color = phase), size = 5) +
+  scale_color_manual(values = c("flowing" = "blue", "non_flowing" = "orange")) +
+  scale_fill_manual(values = c("flowing" = "blue", "non_flowing" = "orange")) +
+  scale_x_continuous(
+    name = "Eixo 1 (PCoA1)",
+    limits = c(-0.5, 0.5),       
+    breaks = seq(-0.5, 0.5, 0.25) 
+  ) +
+  scale_y_continuous(
+    name = "Eixo 2 (PCoA2)",
+    limits = c(-0.5, 0.5),
+    breaks = seq(-0.5, 0.5, 0.25)
+  ) +
+  theme_minimal()

@@ -1,0 +1,213 @@
+################################################################################
+# Responses of aquatic communities to seasonal changes in a non-perennial river 
+# of the Brazilian semiarid region
+#
+# H3: Because drying has been recurrent in these rivers since historical times, 
+# we expect  high functional redundancy in both fish and aquatic insects 
+# communities, leading to unaltered functional diversity across flowing and 
+# non-flowing phases.
+################################################################################
+
+### 1. Load packages ----
+packages <- c("BAT", "FD", "ade4", "dplyr", "tidyr", "ggplot2", "glmmTMB",
+              "lme4", "car", "DHARMa", "writexl", "performance", "tibble", "broom")
+lapply(packages, require, character.only = TRUE)
+
+### 2. Load and prepare trait data ----
+
+# Fish traits (mixed: continuous, binary, ordinal)
+fish_traits <- read.csv("traits_fish.csv", sep = ";", header = TRUE)
+rownames(fish_traits) <- fish_traits[, 1]
+fish_traits <- fish_traits[, -1]
+fish_traits[] <- lapply(fish_traits, as.numeric)
+
+col.blocks <- c(4, 6)
+fish_fuzzy_cont <- prep.fuzzy(fish_traits[,1:10], col.blocks,
+                              row.w = rep(1, nrow(fish_traits)),
+                              labels = c("Feeding", "Dispersion"))
+fish_fuzzy <- cbind(fish_fuzzy_cont, fish_traits[,11:12])
+
+# Insect traits (binary)
+insect_traits <- read.csv("traits_insect.csv", sep = ";", header = TRUE)
+rownames(insect_traits) <- insect_traits[, 1]
+insect_traits <- insect_traits[, -1]
+insect_traits[] <- lapply(insect_traits, as.numeric)
+
+col.blocks <- c(5, 4, 5, 4, 3, 5)
+insect_blocks <- split(seq_along(insect_traits), rep(1:length(col.blocks), col.blocks))
+insect_list <- lapply(insect_blocks, function(ix) {
+  prep.binary(insect_traits[, ix, drop = FALSE], col.blocks = length(ix))
+})
+insect_fuzzy <- do.call(cbind, insect_list)
+
+### 3. Compute functional distance matrices ----
+
+dist_gower_fish <- gowdis(fish_fuzzy)
+dist_gower_insect <- gowdis(insect_fuzzy)
+
+### 4. Load density data and aggregate by sampling unit ----
+
+# Fish
+fish <- read.csv("fish.csv", sep = ";", header = TRUE)
+col_species <- 5:ncol(fish)
+fish_agg <- fish %>%
+  group_by(Month, Phase, Site, Section) %>%
+  summarise(across(all_of(names(fish)[col_species]), mean, na.rm = TRUE), .groups = "drop")
+
+# Insects
+insect <- read.csv("insect.csv", sep = ";", header = TRUE)
+insect[, 5:ncol(insect)] <- lapply(insect[, 5:ncol(insect)], as.numeric)
+col_families <- names(insect)[5:ncol(insect)]
+insect_agg <- insect %>%
+  group_by(Month, Phase, Site, Habitat) %>%
+  summarise(across(all_of(col_families), mean, na.rm = TRUE), .groups = "drop")
+
+# Assume density matrices are:
+densi_fish <- fish_agg [5:23]
+densi_insect <- insect_agg [5:54]
+
+### 5. Calculate Functional Diversity and Functional Redundancy ----
+
+# Functional diversity
+FD_fish <- BAT::alpha(as.matrix(densi_fish), as.matrix(dist_gower_fish))
+FD_insect <- BAT::alpha(as.matrix(densi_insect), as.matrix(dist_gower_insect))
+
+# Functional redundancy = Taxonomic richness - Functional richness
+tax_rich_fish <- rowSums(densi_fish > 0)
+FRed_fish <- tax_rich_fish - FD_fish
+
+tax_rich_insect <- rowSums(densi_insect > 0)
+FRed_insect <- tax_rich_insect - FD_insect
+
+# Relative functional redundancy
+FRed_fish_rel <- FRed_fish / tax_rich_fish
+FRed_insect_rel <- FRed_insect / tax_rich_insect
+
+### 6. Create dataframes for modelling ----
+
+# Vectors
+phase_fish <- fish_agg$Phase
+site_fish <- fish_agg$Site
+phase_insect <- insect_agg$Phase
+site_insect <- insect_agg$Site
+
+# Dataframes
+df_fish <- data.frame(
+  Richness = tax_rich_fish,
+  FD = as.vector(FD_fish),
+  FRed = as.vector(FRed_fish),
+  FRed_rel = as.vector(FRed_fish_rel),
+  Phase = factor(phase_fish),
+  Site = factor(site_fish)
+)
+
+df_insect <- data.frame(
+  Richness = tax_rich_insect,
+  FD = as.vector(FD_insect),
+  FRed = as.vector(FRed_insect),
+  FRed_rel = as.vector(FRed_insect_rel),
+  Phase = factor(phase_insect),
+  Site = factor(site_insect)
+)
+
+### 7. Fit GLMMs and compare models ----
+
+# --- Fish models ---
+
+# Fit GLMM
+plot(density(df_fish$FD)) #data distribution
+hist(df_fish$FD)
+shapiro.test(df_fish$FD)
+ncvTest(lm(FD ~ Phase, data = df_fish))
+
+model_fish_FD <- glmmTMB(FD ~ Phase + (1 | Site), data = df_fish, family = Gamma("log"))
+summary(model_fish_FD)
+
+sim_res_FD_fish <- simulateResiduals(model_fish_FD) # Check residuals
+plot(sim_res_FD_fish)
+testDispersion(sim_res_FD_fish)
+testUniformity(sim_res_FD_fish) 
+
+
+# Null vs full with richness
+model_fish_FD_null <- glmmTMB(FD ~ Richness + (1 | Site), data = df_fish, family = Gamma("log"))
+model_fish_FD_full <- glmmTMB(FD ~ Richness + Phase + (1 | Site), data = df_fish, family = Gamma("log"))
+anova(model_fish_FD_null, model_fish_FD_full)
+
+# FRed
+plot(density(df_fish$FRed)) #data distribution
+hist(df_fish$FRed)
+shapiro.test(df_fish$FRed)
+ncvTest(lm(FRed ~ Phase, data = df_fish))
+
+model_fish_FRed <- glmmTMB(FRed ~ Phase + (1 | Site), data = df_fish, family = Gamma("log"))
+summary(model_fish_FRed)
+
+sim_res_FRed_fish <- simulateResiduals(model_fish_FRed) # Check residuals
+plot(sim_res_FRed_fish)
+testDispersion(sim_res_FRed_fish)
+testUniformity(sim_res_FRed_fish) 
+
+
+# --- Insect models ---
+
+# FD
+plot(density(df_insect$FD)) #data distribution
+hist(df_insect$FD)
+shapiro.test(df_insect$FD)
+ncvTest(lm(FD ~ Phase, data = df_insect))
+
+model_insect_FD <- glmmTMB(FD ~ Phase + (1 | Site), data = df_insect, family = Gamma("log"))
+summary(model_insect_FD)
+
+sim_res_FD_insect <- simulateResiduals(model_insect_FD) # Check residuals
+plot(sim_res_FD_insect)
+testDispersion(sim_res_FD_insect)
+testUniformity(sim_res_FD_insect) 
+
+model_insect_FD_null <- glmmTMB(FD ~ Richness + (1 | Site), data = df_insect, family = Gamma("log"))
+model_insect_FD_full <- glmmTMB(FD ~ Richness + Phase + (1 | Site), data = df_insect, family = Gamma("log"))
+anova(model_insect_FD_null, model_insect_FD_full)
+
+# FRed
+plot(density(df_insect$FRed)) #data distribution
+hist(df_insect$FRed)
+shapiro.test(df_insect$FRed)
+ncvTest(lm(FRed ~ Phase, data = df_insect))
+
+model_insect_FRed <- glmmTMB(FRed ~ Phase + (1 | Site), data = df_insect, family = Gamma("log"))
+summary(model_insect_FRed)
+
+sim_res_FRed_insect <- simulateResiduals(model_insect_FRed) # Check residuals
+plot(sim_res_FRed_insect)
+testDispersion(sim_res_FRed_insect)
+testUniformity(sim_res_FRed_insect) 
+
+
+### 8. Visualization ----
+
+# Boxplots for FD
+ggplot(df_fish, aes(x = Phase, y = FD, fill = Phase)) +
+  geom_boxplot(alpha = 0.6) +
+  theme_minimal() +
+  labs(title = "Fish functional diversity", y = "FD", x = "Hydrological phase") +
+  scale_fill_manual(values = c("flowing" = "blue", "non_flowing" = "orange"))
+
+ggplot(df_insect, aes(x = Phase, y = FD, fill = Phase)) +
+  geom_boxplot(alpha = 0.6) +
+  theme_minimal() +
+  labs(title = "Insect functional diversity", y = "FD", x = "Hydrological phase") +
+  scale_fill_manual(values = c("flowing" = "blue", "non_flowing" = "orange"))
+
+# Boxplots for FRed
+ggplot(df_fish, aes(x = Phase, y = FRed_rel, fill = Phase)) +
+  geom_boxplot(alpha = 0.6) +
+  theme_minimal() +
+  labs(title = "Fish functional redundancy", y = "FRed_rel", x = "Hydrological phase") +
+  scale_fill_manual(values = c("flowing" = "blue", "non_flowing" = "orange"))
+
+ggplot(df_insect, aes(x = Phase, y = FRed_rel, fill = Phase)) +
+  geom_boxplot(alpha = 0.6) +
+  theme_minimal() +
+  labs(title = "Insect functional redundancy", y = "FRed_rel", x = "Hydrological phase") +
+  scale_fill_manual(values = c("flowing" = "blue", "non_flowing" = "orange"))
