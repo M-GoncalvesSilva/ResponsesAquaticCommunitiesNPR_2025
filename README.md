@@ -1,16 +1,8 @@
 # Responses of aquatic communities to seasonal changes in a non-perennial river of the Brazilian semiarid region
 
-This repository contains the data and analysis scripts associated with the manuscript:
-
-**Gonçalves-Silva, M.**, et al. (in review). *Responses of aquatic communities to seasonal changes in a non-perennial river of the Brazilian semiarid region*. Submitted to *Aquatic Sciences*.
-
----
-
 ## Abstract
 
 Non-perennial rivers (NPRs) are highly dynamic ecosystems that cease to flow or dry up partially or completely across time and space, representing over half of the global river network. These systems are expanding globally under climate change, yet their biodiversity patterns remain poorly understood in tropical semi-arid regions. We evaluated the effects of seasonal drying on the taxonomic (α and β) and functional diversity of fish and aquatic insects in the Cruxati NPR. Fish α-diversity remained stable between the two phases, likely reflecting physiological, trophic, and reproductive adaptations of dominant species. Insects exhibited higher α-diversity during the non-flowing phase, driven by lentic-adapted taxa. Fish β-diversity increased during the non-flowing phase due to environmental heterogeneity across isolated pools and founder effects, whereas insect β-diversity did not vary, possibly due to the limited spatial scale. Functional diversity remained unchanged between flowing and non-flowing phases in both fish and aquatic insect communities, likely due to historical periods of intense and frequent droughts. Our findings reveal that aquatic communities in semi-arid NPRs exhibit distinct results from those in temperate regions, showing seasonal persistence and highlighting the importance of historical and regional contexts in shaping biodiversity responses to hydrological fluctuations. Given the strong dependence of these communities on remnant isolated pools during the non-flowing phase, proper water resource management is crucial to ensure the ecological resilience of NPRs.
-
----
 
 ## Keywords
 
@@ -51,8 +43,6 @@ This study assesses how seasonal drying affects fish and aquatic insect communit
 - **H1**: Reduced taxonomic α-diversity during the non-flowing phase compared to the flowing phase due drying acts as a filter that constrains aquatic communities.
 - **H2**: Increased spatial β-diversity in the non-flowing phase due to environmental heterogeneity among isolated pools  
 - **H3**: Stable functional diversity due to historical functional redundancy
-
----
 
 ## How to reproduce the analyses
 
