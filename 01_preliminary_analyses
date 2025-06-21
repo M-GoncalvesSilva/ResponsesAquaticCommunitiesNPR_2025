@@ -1,0 +1,58 @@
+################################################################################
+# Responses of aquatic communities to seasonal changes in a non-perennial river 
+# of the Brazilian semiarid region
+#
+# Preliminary analyses (PERMANOVA + SIMPER)
+################################################################################
+
+### 1. Load packages ----
+packages <- c("vegan", "dplyr", "tidyr", "ggplot2", "tibble")
+lapply(packages, require, character.only = TRUE)
+
+
+### 2. Load density data and aggregate by sampling unit ----
+
+# Fish
+fish <- read.csv("fish.csv", sep = ";", header = TRUE)
+col_species <- 5:ncol(fish)
+fish_agg <- fish %>%
+  group_by(Month, Phase, Site, Section) %>%
+  summarise(across(all_of(names(fish)[col_species]), mean, na.rm = TRUE), .groups = "drop")
+
+# Insects
+insect <- read.csv("insect.csv", sep = ";", header = TRUE)
+insect[, 5:ncol(insect)] <- lapply(insect[, 5:ncol(insect)], as.numeric)
+col_families <- names(insect)[5:ncol(insect)]
+insect_agg <- insect %>%
+  group_by(Month, Phase, Site, Habitat) %>%
+  summarise(across(all_of(col_families), mean, na.rm = TRUE), .groups = "drop")
+
+# Define density matrices
+densi_fish <- fish_agg[5:23]
+densi_insect <- insect_agg[5:54]
+
+phase_fish <- as.factor(fish_agg$Phase)
+phase_insect <- as.factor(insect_agg$Phase)
+
+
+### 3. PERMANOVA ----
+
+adonis_fish <- adonis2(densi_fish ~ phase_fish, method = "bray", permutations = 999)
+print(adonis_fish)
+
+adonis_insect <- adonis2(densi_insect ~ phase_insect, method = "bray", permutations = 999)
+print(adonis_insect)
+
+
+### 4. SIMPER ----
+
+# Log-transform densities
+fish_densi_log <- log1p(densi_fish)
+insect_densi_log <- log1p(densi_insect)
+
+# Run SIMPER
+simper_fish <- simper(fish_densi_log, group = phase_fish, permutations = 999)
+summary(simper_fish)
+
+simper_insect <- simper(insect_densi_log, group = phase_insect, permutations = 999)
+summary(simper_insect)
