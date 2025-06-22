@@ -14,16 +14,15 @@ Non-perennial rivers (NPRs) are highly dynamic ecosystems that cease to flow or 
 
 ```plaintext
 .
-├── data/
-│   ├── fish_density.csv
-│   ├── insect_density.csv
-│   ├── fish_traits.csv
-│   └── insect_traits.csv
-├── scripts/
+├── Codes and Data
 │   ├── 01_preliminary_analyses.txt
 │   ├── 02_H1_alpha_diversity.txt
 │   ├── 03_H2_beta_diversity.txt
 │   └── 04_H3_functional_diversity.txt
+│   ├── fish_density.csv
+│   ├── insect_density.csv
+│   ├── fish_traits.csv
+│   └── insect_traits.csv
 ├── README.md
 └── LICENSE
 ```
